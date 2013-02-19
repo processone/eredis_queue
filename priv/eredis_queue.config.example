@@ -1,5 +1,10 @@
 %%-*- mode: erlang -*-
 [
+ {eredis_queue,
+  [
+   {module, eredis_queue_handler}
+  ]},
+ 
  {eredis_pool,
   [{pools, [{default,
 	     [{size, 10},

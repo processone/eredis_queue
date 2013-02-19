@@ -19,11 +19,11 @@
 	 terminate/2, code_change/3]).
 
 %% Internal loop export
--export([blpop_loop/2]).
+-export([blpop_loop/3]).
 
 -define(SERVER, ?MODULE). 
 
--record(state, {queue, redis_pool, loop_pid}).
+-record(state, {queue, redis_pool, loop_pid, module}).
 
 %%%===================================================================
 %%% API
@@ -69,10 +69,20 @@ name(Queue) when is_list(Queue) ->
 %% @end
 %%--------------------------------------------------------------------
 init([Queue, RedisPool]) ->
-    Pid = spawn_link(?MODULE, blpop_loop, [self(), Queue]), 
-    {ok, #state{queue=Queue, redis_pool=RedisPool, loop_pid=Pid}}.
+    Module = case application:get_env(eredis_queue, module) of
+		 {ok, Mod} when is_atom(Mod) -> Mod;
+		 {ok, Mod} when is_list(Mod) -> list_to_atom(Mod);
+		 undefined -> undefined
+	     end,
+    case Module of
+	undefined ->
+	    {stop, {error, no_queue_handler_module}};
+	Module ->
+	    Pid = spawn_link(?MODULE, blpop_loop, [self(), Queue, RedisPool]),
+	    {ok, #state{queue=Queue, redis_pool=RedisPool, loop_pid=Pid, module=Module}}
+    end.
 
-%%--------------------------------------------------------------------
+%%------ev--------------------------------------------------------------
 %% @private
 %% @doc
 %% Handling call messages
@@ -115,6 +125,20 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+%% Process incoming jobs:
+handle_info({process_job, Data}, #state{queue=Queue, module=Module} = State) ->
+    case catch mochijson2:decode(Data) of
+	{'EXIT',_} ->
+	    lager:error("Invalid JSON (~p): ~p", [Queue, Data]);
+	{struct,[{<<"class">>,Class},
+		 {<<"args">>,Args}]} when is_binary(Class),
+					  is_list(Args) ->
+	    lager:info("[~p] Processing ~p: ~p", [Queue, Class, Args]),
+	    Module:run(Queue, Class, Args);
+	UnknownCommand ->
+	    lager:error("[~p] Unknown command format: ~p", [Queue, UnknownCommand])
+    end,
+    {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -146,5 +170,17 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-blpop_loop(_Pid, _Queue) ->
-    ok.
+blpop_loop(Pid, Queue, RedisPool) ->
+    case catch eredis_pool:q({global, RedisPool},
+			     ["BLPOP", redis_queue_name(Queue), 60], 65000) of
+	{'EXIT', {timeout, {gen_server,call,_Call}}} -> %% gen_server timeout
+	    ok;
+	{ok,undefined} -> %% Redis BLPOP timeout
+	    ok;
+	{ok, [_BinQueue, Data]} ->
+	    Pid ! {process_job, Data}
+    end,
+    blpop_loop(Pid, Queue, RedisPool).
+
+redis_queue_name(Queue) when is_list(Queue) ->
+    "queue:" ++ Queue.

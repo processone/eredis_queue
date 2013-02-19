@@ -1,2 +1,3 @@
+- Command to add and delete queue
 - Add ability to define number of workers per queue
 - Add ability to support priority (workers listen to all queues in order of priority)
