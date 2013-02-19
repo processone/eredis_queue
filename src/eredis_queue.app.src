@@ -1,0 +1,15 @@
+%%-*- mode: erlang -*-
+{application, eredis_queue,
+ [
+  {description, "Redis-based Erlang Async Job Processing"},
+  {vsn, "0.1.0"},
+  {registered, [apns]},
+  {applications, [
+                  lager,
+                  kernel,
+                  stdlib,
+		  eredis_pool
+                 ]},
+  {mod, {eredis_queue_app, []}},
+  {env, []}
+ ]}.

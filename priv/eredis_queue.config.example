@@ -1,0 +1,10 @@
+%%-*- mode: erlang -*-
+[
+ {eredis_pool,
+  [{pools, [{default,
+	     [{size, 10},
+	      {max_overflow, 30}
+	     ]}
+	   ]}
+  ]}
+].
