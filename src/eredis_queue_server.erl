@@ -131,8 +131,7 @@ handle_info({process_job, Data}, #state{queue=Queue, module=Module} = State) ->
 	{'EXIT',_} ->
 	    lager:error("Invalid JSON (~p): ~p", [Queue, Data]);
 	{struct,[{<<"class">>,Class},
-		 {<<"args">>,Args}]} when is_binary(Class),
-					  is_list(Args) ->
+		 {<<"args">>,Args}]} when is_binary(Class) ->
 	    lager:info("[~p] Processing ~p: ~p", [Queue, Class, Args]),
 	    Module:run(Queue, Class, Args);
 	UnknownCommand ->
