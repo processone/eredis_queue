@@ -2,8 +2,8 @@
 
 -export([run/3]).
 
-run(SQueue, BClass, Args) when is_list(SQueue),
-			       is_binary(BClass) ->
-    lager:info("[~s] Job received (~s): ~p", [SQueue, BClass, Args]);
+run(Queue, Class, Args) when is_list(Queue),
+			     is_list(Class) ->
+    lager:info("[~s] Job received (~s): ~p", [Queue, Class, Args]);
 run(Queue, Class, Args) ->
     lager:error("Incorrect parameters (~p, ~p, ~p)", [Queue, Class, Args]).

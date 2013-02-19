@@ -127,12 +127,12 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 %% Process incoming jobs:
 handle_info({process_job, Data}, #state{queue=Queue, module=Module} = State) ->
-    case catch mochijson2:decode(Data) of
+    case catch mochijson:decode(Data) of
 	{'EXIT',_} ->
 	    lager:error("Invalid JSON (~p): ~p", [Queue, Data]);
-	{struct,[{<<"class">>,Class},
-		 {<<"args">>,Args}]} when is_binary(Class) ->
-	    lager:info("[~p] Processing ~p: ~p", [Queue, Class, Args]),
+	{struct, [{"class", Class},
+		  {"args", Args}]} when is_list(Class) ->
+	    lager:info("[~s] Processing ~s: ~p", [Queue, Class, Args]),
 	    Module:run(Queue, Class, Args);
 	UnknownCommand ->
 	    lager:error("[~p] Unknown command format: ~p", [Queue, UnknownCommand])
