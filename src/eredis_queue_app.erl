@@ -41,7 +41,7 @@ ensure_started(App) ->
     end.
 
 launch_queues_in_first_pool() ->
-    {PoolName, BinQueues} = eredis_queue:get(),
+    {PoolName, BinQueues} = eredis_queue:get_queue(),
     lists:foreach(
       fun(BinQueue) ->
 	      eredis_queue_sup:start_child(BinQueue, PoolName)

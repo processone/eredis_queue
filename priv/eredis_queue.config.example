@@ -2,7 +2,8 @@
 [
  {eredis_queue,
   [
-   {module, eredis_queue_handler}
+   {module, eredis_queue_handler},
+   {defaut_queue, "push"}
   ]},
  
  {eredis_pool,
