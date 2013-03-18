@@ -175,6 +175,8 @@ blpop_loop(Pid, Queue, RedisPool) ->
 			     ["BLPOP", redis_queue_name(Queue), 60], 65000) of
 	{'EXIT', {timeout, {gen_server,call,_Call}}} -> %% gen_server timeout
 	    ok;
+        {error,<<"ERR unknown command 'BLPOP'">>} ->
+            lager:critical("Wrong Redis version. You need Redis 2.0.0 or greater to use queues.", []);
 	{ok,undefined} -> %% Redis BLPOP timeout
 	    ok;
 	{ok, [_BinQueue, Data]} ->
