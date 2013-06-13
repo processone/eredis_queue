@@ -16,12 +16,13 @@
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-	 terminate/2, code_change/3]).
+         terminate/2, code_change/3]).
 
 %% Internal loop export
 -export([blpop_loop/3]).
 
--define(SERVER, ?MODULE). 
+-define(SERVER, ?MODULE).
+-define(BLPOP_RETRY_INTERVAL, 60000).
 
 -record(state, {queue, redis_pool, loop_pid, module}).
 
@@ -70,19 +71,19 @@ name(Queue) when is_list(Queue) ->
 %%--------------------------------------------------------------------
 init([Queue, RedisPool]) ->
     Module = case application:get_env(eredis_queue, module) of
-		 {ok, Mod} when is_atom(Mod) -> Mod;
-		 {ok, Mod} when is_list(Mod) -> list_to_atom(Mod);
-		 undefined -> undefined
-	     end,
+                 {ok, Mod} when is_atom(Mod) -> Mod;
+                 {ok, Mod} when is_list(Mod) -> list_to_atom(Mod);
+                 undefined -> undefined
+             end,
     case Module of
-	undefined ->
-	    {stop, {error, no_queue_handler_module}};
-	Module ->
-	    Pid = spawn_link(?MODULE, blpop_loop, [self(), Queue, RedisPool]),
-	    {ok, #state{queue=Queue, redis_pool=RedisPool, loop_pid=Pid, module=Module}}
+        undefined ->
+            {stop, {error, no_queue_handler_module}};
+        Module ->
+            Pid = spawn_link(?MODULE, blpop_loop, [self(), Queue, RedisPool]),
+            {ok, #state{queue=Queue, redis_pool=RedisPool, loop_pid=Pid, module=Module}}
     end.
 
-%%------ev--------------------------------------------------------------
+%%--------------------------------------------------------------------
 %% @private
 %% @doc
 %% Handling call messages
@@ -128,15 +129,15 @@ handle_cast(_Msg, State) ->
 %% Process incoming jobs:
 handle_info({process_job, Data}, #state{queue=Queue, module=Module} = State) ->
     case catch mochijson:decode(Data) of
-	{'EXIT',_} ->
-	    lager:error("Invalid JSON (~p): ~p", [Queue, Data]);
-	{struct, [{"class", Class},
-		  {"args", {array, Args}}]} when is_list(Class),
-						 is_list(Args) ->
-	    lager:info("[~s] Processing ~s: ~p", [Queue, Class, Args]),
-	    Module:run(Queue, Class, Args);
-	UnknownCommand ->
-	    lager:error("[~p] Unknown command format: ~p", [Queue, UnknownCommand])
+        {'EXIT',_} ->
+            lager:error("Invalid JSON (~p): ~p", [Queue, Data]);
+        {struct, [{"class", Class},
+                  {"args", {array, Args}}]} when is_list(Class),
+                                                 is_list(Args) ->
+            lager:info("[~s] Processing ~s: ~p", [Queue, Class, Args]),
+            Module:run(Queue, Class, Args);
+        UnknownCommand ->
+            lager:error("[~p] Unknown command format: ~p", [Queue, UnknownCommand])
     end,
     {noreply, State};
 handle_info(_Info, State) ->
@@ -172,15 +173,21 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 blpop_loop(Pid, Queue, RedisPool) ->
     case catch eredis_pool:q({global, RedisPool},
-			     ["BLPOP", redis_queue_name(Queue), 60], 65000) of
-	{'EXIT', {timeout, {gen_server,call,_Call}}} -> %% gen_server timeout
-	    ok;
+                             ["BLPOP", redis_queue_name(Queue), 60], 65000) of
+        {'EXIT', {timeout, {gen_server,call,_Call}}} -> %% gen_server timeout
+            lager:warning("Failed BLPOP command", []),
+            timer:sleep(?BLPOP_RETRY_INTERVAL),
+            ok;
         {error,<<"ERR unknown command 'BLPOP'">>} ->
             lager:critical("Wrong Redis version. You need Redis 2.0.0 or greater to use queues.", []);
-	{ok,undefined} -> %% Redis BLPOP timeout
-	    ok;
-	{ok, [_BinQueue, Data]} ->
-	    Pid ! {process_job, Data}
+        {ok,undefined} -> %% Redis BLPOP timeout
+            ok;
+        {error,no_connection} ->
+            lager:warning("Lost Redis connection", []),
+            timer:sleep(?BLPOP_RETRY_INTERVAL),
+            ok;
+        {ok, [_BinQueue, Data]} ->
+            Pid ! {process_job, Data}
     end,
     blpop_loop(Pid, Queue, RedisPool).
 
