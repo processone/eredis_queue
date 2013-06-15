@@ -182,6 +182,10 @@ blpop_loop(Pid, Queue, RedisPool) ->
             lager:critical("Wrong Redis version. You need Redis 2.0.0 or greater to use queues.", []);
         {ok,undefined} -> %% Redis BLPOP timeout
             ok;
+        {error, BReason} ->
+            lager:error("Failed Redis Job Queue checking. Reason: ~s", [binary_to_list(BReason)]),
+            timer:sleep(?BLPOP_RETRY_INTERVAL),
+            ok;
         {error,no_connection} ->
             lager:warning("Lost Redis connection", []),
             timer:sleep(?BLPOP_RETRY_INTERVAL),
